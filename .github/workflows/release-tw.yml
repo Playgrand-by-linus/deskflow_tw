@@ -82,13 +82,20 @@ jobs:
         with:
           name: package-${{ matrix.target.name }}
           path: |
+            build/*.dmg
+            build/*.msi
+            build/*.exe
+            build/*.deb
+            build/*.rpm
+            build/*.tar.gz
             build/deskflow*.*
-            build/_CPack_Packages/**/*.*
+          if-no-files-found: warn
 
   publish-release:
     name: Publish GitHub Release
     needs: build
     runs-on: ubuntu-latest
+    if: ${{ !cancelled() && contains(needs.build.result, 'success') }}
     permissions:
       contents: write
 
@@ -99,7 +106,9 @@ jobs:
       - name: Download all built packages
         uses: actions/download-artifact@v4
         with:
+          pattern: package-*
           path: release-packages
+          merge-multiple: true
 
       - name: Organize release files
         shell: bash

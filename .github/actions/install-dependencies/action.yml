@@ -34,8 +34,8 @@ runs:
             brew install openssl --quiet
           elif [ "$RUNNER_OS" == "Linux" ]; then
             if [ ${{inputs.like}} == "debian" ]; then
-              apt update -qqq > /dev/null
-              apt install -qqq cmake build-essential ninja-build \
+              sudo apt update -qqq > /dev/null
+              sudo apt install -qqq cmake build-essential ninja-build \
                 xorg-dev libx11-dev libxtst-dev libssl-dev libxkbfile-dev \
                 qt6-base-dev qt6-tools-dev libxkbregistry-dev libxkbcommon-dev \
                 libei-dev libportal-dev help2man -y >/dev/null
