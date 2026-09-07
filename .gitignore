@@ -49,3 +49,7 @@ CMakeFiles/*
 # Ai helperfilers
 **/[cC]laude.[mM][dD]
 **/CLAUDE.[mM][dD]
+
+# Python cache
+__pycache__/
+*.py[cod]
