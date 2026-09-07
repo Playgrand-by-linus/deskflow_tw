@@ -1,0 +1,135 @@
+# Automated Release Workflow for Deskflow Traditional Chinese Edition (deskflow_tw)
+# Triggers on pushing a tag matching 'v*-tw*' (e.g. v1.26.0-tw1) or via manual dispatch.
+
+name: Release Traditional Chinese Edition
+
+on:
+  push:
+    tags:
+      - "v*-tw*"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PACKAGE_PREFIX: "deskflow"
+  CMAKE_CONFIGURE: "cmake -Bbuild -DCMAKE_BUILD_TYPE=Release -DSKIP_BUILD_TESTS=ON"
+
+jobs:
+  build:
+    name: Build ${{ matrix.target.name }}
+    runs-on: ${{ matrix.target.runs-on }}
+    timeout-minutes: 40
+
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - name: "windows-x64"
+            runs-on: "windows-2022"
+            config-args: "-G Ninja"
+            vcpkg-triplet: x64-windows-release
+            arch: "amd64"
+            qt-version: 6.11.2
+
+          - name: "macos-arm64"
+            runs-on: macos-15
+            qt-version: 6.11.2
+            config-args: '-DCMAKE_OSX_ARCHITECTURES="arm64" -DCMAKE_OSX_DEPLOYMENT_TARGET=14'
+
+          - name: "macos-x64"
+            runs-on: macos-15-intel
+            qt-version: 6.9.3
+            config-args: '-DCMAKE_OSX_ARCHITECTURES="x86_64" -DCMAKE_OSX_DEPLOYMENT_TARGET=12'
+
+          - name: "ubuntu-x64"
+            runs-on: ubuntu-24.04
+            like: "debian"
+            config-args: "-G Ninja -DCMAKE_INSTALL_PREFIX=/usr"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup VC++ environment (Windows)
+        if: runner.os == 'Windows'
+        uses: TheMrMilchmann/setup-msvc-dev@v4
+        with:
+          arch: ${{ matrix.target.arch }}
+
+      - name: Install dependencies
+        id: get-deps
+        uses: ./.github/actions/install-dependencies
+        with:
+          qt-version: ${{ matrix.target.qt-version }}
+          vcpkg-triplet: ${{ matrix.target.vcpkg-triplet }}
+          like: ${{ matrix.target.like }}
+
+      - name: Configure CMake
+        run: ${{ env.CMAKE_CONFIGURE }} ${{ matrix.target.config-args }} ${{ steps.get-deps.outputs.vcpkg-cmake-config }}
+
+      - name: Build and Package
+        shell: bash
+        run: |
+          cmake --build build --config Release -j$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4) --target package
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.target.name }}
+          path: |
+            build/deskflow*.*
+            build/_CPack_Packages/**/*.*
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all built packages
+        uses: actions/download-artifact@v4
+        with:
+          path: release-packages
+
+      - name: Organize release files
+        shell: bash
+        run: |
+          mkdir -p dist
+          find release-packages -type f \( -name "*.msi" -o -name "*.exe" -o -name "*.dmg" -o -name "*.deb" -o -name "*.rpm" -o -name "*.tar.gz" \) -exec cp {} dist/ \;
+          cd dist
+          sha256sum * > SHA256SUMS.txt || true
+          ls -la
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "Deskflow 繁體中文版 ${{ github.ref_name }}"
+          tag_name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          body: |
+            ## Deskflow 繁體中文版 (${{ github.ref_name }})
+
+            本版本為 Deskflow 臺灣 / 繁體中文在地化專案的自動建置安裝發布版本。
+
+            ### 主要特色與更新：
+            - **100% 完整繁體中文介面**：全數 314 條字串精準在地化校對。
+            - **精準專業名詞對齊**：明確標註「伺服器 (主控端)」與「用戶端 (被控端)」，大幅降低初次設定障礙。
+            - **修飾鍵與快捷鍵原生體驗**：鍵盤修飾鍵保留標準英文字樣 (`Ctrl`, `Alt`, `Shift`)，選單操作相容原生快速鍵。
+            - **跨機剪貼簿與鍵鼠共享**：完整支援 Windows 與 macOS 雙系統無縫游標移動與剪貼簿文字共享。
+
+            ### 下載安裝說明：
+            - **Windows 使用者**：下載 `.msi` 或 `.exe` 安裝檔直接安裝。
+            - **Mac 使用者 (Apple Silicon M1/M2/M3/M4)**：下載包含 `arm64` 之 `.dmg` 安裝檔。
+            - **Mac 使用者 (Intel 處理器)**：下載包含 `x64` 之 `.dmg` 安裝檔。
+          files: dist/*
